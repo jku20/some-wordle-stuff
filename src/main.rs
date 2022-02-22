@@ -47,7 +47,7 @@ type WordBank<'a> = &'a [&'a str];
 ///the guess against.
 //maybe implement caching later
 //subtle bug where I don't quite replicate the right behavior
-//when there are multiple of the same character not in the right place
+//when there are multiple of the same character not in the right place but I think I fixed it now
 fn solution_compare(guess: WordId, solution: WordId, gbank: WordBank, sbank: WordBank) -> Grade {
     //check if yellow
     let mut r = [Mark::Grey, Mark::Grey, Mark::Grey, Mark::Grey, Mark::Grey];
@@ -101,36 +101,6 @@ mod test {
 ///Creates a bucket for a given word given
 ///a bank of guesses and possible solutions.
 ///note I only let buckets be composed of possible solution words
-///this function also updates a used array
-///Note that not all compare functions require a solution word
-///in which case plugging in whatever for that argument is fine.
-fn bucket_and_update<T>(
-    guess: WordId,
-    solution: WordId,
-    compare: T,
-    left: &[WordId],
-    used: &mut [bool],
-    gbank: WordBank,
-    sbank: WordBank,
-) -> Bucket
-where
-    T: Fn(WordId, WordId, WordBank, WordBank) -> Grade,
-{
-    let guess_mark = compare(guess, solution, gbank, sbank);
-    let mut bkt = vec![];
-    for &word in left {
-        let wmark = compare(guess, word, gbank, sbank);
-        if wmark == guess_mark {
-            bkt.push(word);
-            used[word] = true;
-        }
-    }
-    bkt
-}
-
-///Creates a bucket for a given word given
-///a bank of guesses and possible solutions.
-///note I only let buckets be composed of possible solution words
 ///Note that not all compare functions require a solution word
 ///in which case plugging in whatever for that argument is fine.
 fn bucket<T>(
@@ -161,64 +131,36 @@ where
 ///I'll call this smallest largest bucket an sm_bucket
 ///and the word which creates that bucket the sm_word
 fn sm_word(left: &[WordId], gbank: WordBank, sbank: WordBank) -> WordId {
-    let smbl = left
-        .par_iter()
-        .fold(
-            || vec![0; gbank.len()],
-            |mut acc, &sol| {
-                if sol % 50 == 0 { println!("solution word: {}", sol); }
-                //create all the buckets
-                let mut used = vec![false; sbank.len()];
-                let mut bkts = vec![];
-                for &gsol in left {
-                    bkts.push(bucket(
-                        gsol,
-                        sol,
+    //for every possible guess, find the bucket for every word left
+    //choose the guess which makes it's largest bucket for every solution word smallest
+    (0..gbank.len())
+        .into_par_iter()
+        .min_by_key(|&guess| {
+            let out = left
+                .iter()
+                .map(|&possible_solution| {
+                    bucket(
+                        guess,
+                        possible_solution,
                         solution_compare,
                         left,
+                        gbank,
                         sbank,
-                        sbank,
-                    ));
-                }
-
-                //check to see bucket size for a given solution
-                //if so update smbl
-                for (guess, w) in acc.iter_mut().enumerate() {
-                    let guess_mark = solution_compare(guess, sol, gbank, sbank);
-                    for bkt in bkts.iter() {
-                        let bmark = solution_compare(guess, bkt[0], gbank, sbank);
-                        if guess_mark == bmark {
-                            *w = (*w).max(bkt.len());
-                            break;
-                        }
-                    }
-                }
-                acc
-            },
-        )
-        .reduce(
-            || vec![0; gbank.len()],
-            |acc, prt| {
-                acc.into_iter()
-                    .zip(prt.into_iter())
-                    .map(|(a, b)| a.max(b))
-                    .collect::<Vec<_>>()
-            },
-        );
-
-    println!("smbl: {:?}", smbl);
-    //min should always succeed as there should exist non-zero buckets
-    smbl.iter()
-        .position(|x| x == smbl.iter().filter(|&&w| w != 0).min().unwrap())
+                    )
+                    .len()
+                })
+                .max()
+                .unwrap();
+            //if guess % 50 == 0 { eprintln!("finished guess {}", guess); }
+            out
+        })
         .unwrap()
 }
 
 ///Starting word, guess with minimum maxmimum bucket
-///found with a brute force in about 2 and a half minutes
-///the word is aggri
-/////the word was "miaou"
-//const START_GUESS_WORD: WordId = 5660;
-const START_GUESS_WORD: WordId = 132;
+///found with a brute force in about 15 minutes on a gen 8 i7
+///the word is "aesir"
+const START_GUESS_WORD: WordId = 113;
 
 ///The game will let you define a way to guess and a way to get the current solution.
 ///It requires a way to determine a guess and a way to determine how that guess will be marked.
@@ -320,27 +262,38 @@ fn sim_game_with_solution(solution: WordId, gbank: WordBank, sbank: WordBank) ->
     let mut cur_turn = 1;
     let mut cur_game_bkt = game.update();
     while cur_game_bkt != None {
-        println!("one turn: {}", cur_turn);
-        println!("cur_game: {:?}", cur_game_bkt);
+        /*
+        eprintln!("turn: {}", cur_turn);
+        eprintln!("cur_game: {:?}", cur_game_bkt);
+        //some debug
+        let b = cur_game_bkt.clone().unwrap();
+        if b.len() == 2 {
+            eprintln!("guessing: {}", gbank[game.guess()]);
+            eprintln!("{}, {}", sbank[b[0]], sbank[b[1]]);
+        }
+        */
         let bkt = cur_game_bkt.unwrap();
-        assert!(bkt.contains(&solution));
         cur_game_bkt = game.update();
         cur_turn += 1;
     }
-    cur_turn
+    cur_turn + 1
 }
 
-//for every solution word, create all the buckets of solution words
-//for every guess see which one it matches
-//keep a table which maps: guess word -> maximum bucket size
+fn maximum_game_length(gbank: WordBank, sbank: WordBank) -> u16 {
+    (0..sbank.len())
+        .into_par_iter()
+        .map(|sol| {
+            let out = sim_game_with_solution(sol, gbank, sbank);
+            if sol % 50 == 0 { println!("finished sol {}", sol); }
+            if out > 5 { println!("out is greater than 5 and is: {}", out); }
+            out
+        })
+        .max()
+        .unwrap()
+}
+
 fn main() {
     //get_smw();
-    /*
-    let guesses = GUESSES_STR.split('\n').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>();
-    let solutions = SOLUTIONS_STR.split('\n').map(|s| s.trim()).filter(|s| !s.is_empty()).collect::<Vec<_>>();
-    let solution = 0;
-    println!("game with solution \"{}\" takes {} turns", solution, sim_game_with_solution(solution, &guesses, &solutions));
-    */
     let guesses = GUESSES_STR
         .split('\n')
         .map(|s| s.trim())
@@ -351,23 +304,6 @@ fn main() {
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>();
-    println!("{}", guesses[START_GUESS_WORD]);
-    let mut mxlen = 0;
-    let mut mx = vec![];
-    for i in 0..solutions.len() {
-        let bkt = bucket(
-            START_GUESS_WORD, 
-            i,
-            solution_compare,
-            &(0..solutions.len()).collect::<Vec<_>>(), 
-            &guesses, 
-            &solutions,
-        );
-        if bkt.len() > mxlen {
-            mxlen = bkt.len();
-            mx = bkt;
-        }
-    }
-    println!("{}", mxlen);
-    println!("{:?}", mx);
+    let mgl = maximum_game_length(&guesses, &solutions);
+    println!("maximum game length: {}", mgl);
 }
