@@ -4,6 +4,6 @@ It also can compute the "best" starting word using a greedily choosing smallest 
 It might also do some other stuff in the future if I want it to. 
 ## To Run
 nothing fancy, just
-'''sh
+```sh
 cargo run --release
-'''
+```
