@@ -1,6 +1,8 @@
 use rayon::prelude::*;
 
+///a string for loading the guesses
 const GUESSES_STR: &str = include_str!("../data/guesses.txt");
+///a string for loading the solutions
 const SOLUTIONS_STR: &str = include_str!("../data/solutions.txt");
 
 ///Possible marks for letters, grey, yellow, green
@@ -18,7 +20,7 @@ impl Default for Mark {
     }
 }
 
-///Wrapper stuct for marks
+///Wrapper stuct for an array of marks
 struct Grade {
     marks: [Mark; 5],
 }
@@ -38,7 +40,6 @@ impl PartialEq for Grade {
 //words are stored in an array and therefor are given an id based on that indexing
 //there is no set pattern
 
-//maybe represent this more smartly later
 type WordId = usize;
 type Bucket = Vec<WordId>;
 type WordBank<'a> = &'a [&'a str];
@@ -46,7 +47,7 @@ type WordBank<'a> = &'a [&'a str];
 ///Compares the solution word to the guess word. Requires a valid solution word to run and check
 ///the guess against.
 //maybe implement caching later
-//subtle bug where I don't quite replicate the right behavior
+//there was subtle bug where I didn't quite replicate the right behavior
 //when there are multiple of the same character not in the right place but I think I fixed it now
 fn solution_compare(guess: WordId, solution: WordId, gbank: WordBank, sbank: WordBank) -> Grade {
     //check if yellow
@@ -80,7 +81,13 @@ mod test {
         assert!(
             solution_compare(0, 0, &["mario"], &["slane"])
                 == Grade {
-                    marks: [Mark::Grey, Mark::Yellow, Mark::Grey, Mark::Grey, Mark::Grey]
+                    marks: [
+                        Mark::Grey, 
+                        Mark::Yellow, 
+                        Mark::Grey, 
+                        Mark::Grey, 
+                        Mark::Grey,
+                    ]
                 }
         );
         assert!(
@@ -91,7 +98,7 @@ mod test {
                         Mark::Green,
                         Mark::Green,
                         Mark::Green,
-                        Mark::Grey
+                        Mark::Grey,
                     ]
                 }
         );
@@ -100,9 +107,9 @@ mod test {
 
 ///Creates a bucket for a given word given
 ///a bank of guesses and possible solutions.
-///note I only let buckets be composed of possible solution words
-///Note that not all compare functions require a solution word
-///in which case plugging in whatever for that argument is fine.
+///Note I only let buckets be composed of possible solution words.
+///All compare functions require a solution word though not all will use it in which case it is
+///fine ot just put in whatever.
 fn bucket<T>(
     guess: WordId,
     solution: WordId,
@@ -128,8 +135,7 @@ where
 ///Finds the word which when guessed
 ///will cause the largest possible bucket to be smallest
 ///it will return that word's ID
-///I'll call this smallest largest bucket an sm_bucket
-///and the word which creates that bucket the sm_word
+///This word I call an sm_word here, hence the name of the function.
 fn sm_word(left: &[WordId], gbank: WordBank, sbank: WordBank) -> WordId {
     //for every possible guess, find the bucket for every word left
     //choose the guess which makes it's largest bucket for every solution word smallest
@@ -151,26 +157,29 @@ fn sm_word(left: &[WordId], gbank: WordBank, sbank: WordBank) -> WordId {
                 })
                 .max()
                 .unwrap();
+            //commented out, though this can be a nice thing for peace of mind when running longer
+            //computations
             //if guess % 50 == 0 { eprintln!("finished guess {}", guess); }
             out
         })
         .unwrap()
 }
 
-///Starting word, guess with minimum maxmimum bucket
+///Starting word, guess with minimum maxmimum bucket when the inital bucket is all possible
+///solution words in a standard wordle game.
 ///found with a brute force in about 15 minutes on a gen 8 i7
 ///the word is "aesir"
 const START_GUESS_WORD: WordId = 113;
 
 ///The game will let you define a way to guess and a way to get the current solution.
 ///It requires a way to determine a guess and a way to determine how that guess will be marked.
-///It provides an update function which can be used to play through the game. It will return
-///either Some(bucket) or None if the game is over
+///It provides an update function which can be used to play a turn of the game. It will return
+///either Some(Bucket) contianing the current game's bucket or None if the game is over.
 trait Game {
     ///Guesses a word with a certain word ID
     fn guess(&mut self) -> WordId;
     ///returns the current solution word, this can depend on the guess but should be consistant to
-    ///the actual rules of a proper wordle game.
+    ///the rules of a proper wordle game.
     fn solution(&mut self, guess: WordId) -> WordId;
     ///Updates the current game, returning a Bucket of remain words or None if the game has
     ///terminated. It will update the current game state.
@@ -179,12 +188,16 @@ trait Game {
 
 ///A game struct for the standard wordle game with one word held constant.
 struct FixedWordle<'a> {
+    ///words not eliminated
     left: Bucket,
-    //this will be sbank
+    ///the word to be guessed
     solution: WordId,
+    ///the bank of all possible solution words
     sbank: &'a [&'a str],
+    ///the bank of all possible guessable words
     gbank: &'a [&'a str],
-    hard_coded_first_turn: bool,
+    ///whether START_GUESS_WORD should be used as a guess
+    hard_code_turn: bool,
 }
 
 impl<'a> FixedWordle<'a> {
@@ -193,23 +206,23 @@ impl<'a> FixedWordle<'a> {
         left: Bucket,
         sbank: &'a [&str],
         gbank: &'a [&str],
-        hard_coded_first_turn: bool,
+        hard_code_turn: bool,
     ) -> Self {
         Self {
             left,
             solution,
             sbank,
             gbank,
-            hard_coded_first_turn,
+            hard_code_turn,
         }
     }
 }
 
 impl<'a> Game for FixedWordle<'a> {
-    //This guess can take a long time, but shouldn't if the
+    //This guess can take a long time, but shouldn't
     fn guess(&mut self) -> WordId {
-        if self.hard_coded_first_turn {
-            self.hard_coded_first_turn = false;
+        if self.hard_code_turn {
+            self.hard_code_turn = false;
             START_GUESS_WORD
         } else {
             sm_word(&self.left, self.gbank, self.sbank)
@@ -230,7 +243,7 @@ impl<'a> Game for FixedWordle<'a> {
     }
 }
 
-//utility functions to do things so main is less a mass of comments
+///finds the the starting guess
 fn get_smw() {
     let guesses = GUESSES_STR
         .split('\n')
@@ -248,8 +261,8 @@ fn get_smw() {
     println!("sm_bucket word: {}", guesses[smw_id]);
 }
 
-//sims a game using a greedy algo and the given solution word as the solution.
-//returns the number of turns the game took.
+///sims a game using a greedy algo and the given solution word as the solution.
+///returns the number of turns the game took. I don't think there is an off by one error in there.
 fn sim_game_with_solution(solution: WordId, gbank: WordBank, sbank: WordBank) -> u16 {
     let mut game = FixedWordle::with_state(
         solution,
@@ -262,23 +275,13 @@ fn sim_game_with_solution(solution: WordId, gbank: WordBank, sbank: WordBank) ->
     let mut cur_turn = 1;
     let mut cur_game_bkt = game.update();
     while cur_game_bkt != None {
-        /*
-        eprintln!("turn: {}", cur_turn);
-        eprintln!("cur_game: {:?}", cur_game_bkt);
-        //some debug
-        let b = cur_game_bkt.clone().unwrap();
-        if b.len() == 2 {
-            eprintln!("guessing: {}", gbank[game.guess()]);
-            eprintln!("{}, {}", sbank[b[0]], sbank[b[1]]);
-        }
-        */
-        let bkt = cur_game_bkt.unwrap();
         cur_game_bkt = game.update();
         cur_turn += 1;
     }
     cur_turn + 1
 }
 
+///this find the maximum game length, pretty self explanitory
 fn maximum_game_length(gbank: WordBank, sbank: WordBank) -> u16 {
     (0..sbank.len())
         .into_par_iter()
@@ -294,7 +297,8 @@ fn maximum_game_length(gbank: WordBank, sbank: WordBank) -> u16 {
 
 fn main() {
     //get_smw();
-    let guesses = GUESSES_STR
+    //load guesses from data files
+    let mut guesses = GUESSES_STR
         .split('\n')
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
@@ -304,6 +308,10 @@ fn main() {
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>();
+    //solutions are possible guesses!
+    guesses.extend_from_slice(&solutions);
+
+    //do the thing
     let mgl = maximum_game_length(&guesses, &solutions);
     println!("maximum game length: {}", mgl);
 }
