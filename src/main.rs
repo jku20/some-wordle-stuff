@@ -1,4 +1,5 @@
 use rayon::prelude::*;
+use clap::{Parser, Subcommand};
 
 ///a string for loading the guesses
 const GUESSES_STR: &str = include_str!("../data/guesses.txt");
@@ -295,8 +296,9 @@ fn maximum_game_length(gbank: WordBank, sbank: WordBank) -> u16 {
         .unwrap()
 }
 
-fn main() {
-    //get_smw();
+///pretty self explanitory, runs `maximum_game_length` on the standard guesses and solutions and
+///prints out the result.
+fn print_maximum_game_length() {
     //load guesses from data files
     let mut guesses = GUESSES_STR
         .split('\n')
@@ -314,4 +316,32 @@ fn main() {
     //do the thing
     let mgl = maximum_game_length(&guesses, &solutions);
     println!("maximum game length: {}", mgl);
+}
+
+
+#[derive(Parser)]
+#[clap(version, about)]
+struct Args {
+    #[clap(subcommand)]
+    mode: Mode,
+}
+
+#[derive(Subcommand)]
+enum Mode {
+    ///Finds the starter based on greedy strategy
+    Starter,
+    ///Finds the maximum game length based on greedy strategy
+    MaxGame,
+}
+
+fn main() {
+    let args = Args::parse();
+    match &args.mode {
+        Mode::Starter => {
+            get_smw();
+        }
+        Mode::MaxGame => {
+            print_maximum_game_length();
+        }
+    }
 }
