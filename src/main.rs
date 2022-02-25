@@ -288,8 +288,10 @@ fn maximum_game_length(gbank: WordBank, sbank: WordBank) -> u16 {
         .into_par_iter()
         .map(|sol| {
             let out = sim_game_with_solution(sol, gbank, sbank);
+            /*
             if sol % 50 == 0 { println!("finished sol {}", sol); }
-            if out > 5 { println!("out is greater than 5 and is: {}", out); }
+            if out >= 5 { println!("out is greater than 5 and is {} using word {} which is {}", out, sol, sbank[sol]); }
+            */
             out
         })
         .max()
